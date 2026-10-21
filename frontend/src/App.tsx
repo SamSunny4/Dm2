@@ -34,6 +34,7 @@ interface Station {
   code: string;
   lat: number;
   lon: number;
+  operational_radius_km?: number;
   jurisdiction: string;
   patrol_vehicles: string[];
 }
@@ -79,14 +80,24 @@ interface Checkpoint {
   priority_score: number;
   target_crime: string;
   ipc_sections: string;
+  checkpoint_type?: string;
+  checkpoint_label?: string;
+  code?: string;
+  beat_sector?: string;
+  sop_action?: string;
   justification: string;
 }
 
 interface VehicleRoute {
   vehicle_id: string;
   vehicle_name: string;
+  call_sign?: string;
+  vehicle_model?: string;
+  beat_sector?: string;
+  theme_color?: string;
   start_station: string;
   return_station: string;
+  coverage_radius_km?: number;
   num_checkpoints: number;
   total_distance_km: number;
   driving_time_minutes: number;
@@ -98,8 +109,19 @@ interface VehicleRoute {
   route_polyline: [number, number][];
 }
 
+interface StationCoverage {
+  station_name: string;
+  station_short_name: string;
+  station_code: string;
+  depot_coords: [number, number];
+  operational_radius_km: number;
+  jurisdiction: string;
+  coverage_boundary?: [number, number][];
+}
+
 interface OptimizationResponse {
   mission_parameters: any;
+  station_coverage?: StationCoverage;
   vehicle_routes: VehicleRoute[];
   baseline_comparison: {
     baseline_name: string;
@@ -547,15 +569,64 @@ export function App() {
     // --- F. Patrol Route Layer ---
     layerRouteRef.current.clearLayers();
     if (showRoute && routeResult && routeResult.vehicle_routes) {
-      routeResult.vehicle_routes.forEach((vr) => {
+      // 1. Station Local Beat Boundary (Visualizes tight operational coverage area)
+      if (routeResult.station_coverage && routeResult.station_coverage.coverage_boundary) {
+        const boundary = L.polygon(routeResult.station_coverage.coverage_boundary, {
+          color: '#0284c7',
+          dashArray: '5, 5',
+          weight: 2,
+          fillColor: '#38bdf8',
+          fillOpacity: 0.08
+        });
+        boundary.bindTooltip(`
+          <b>${routeResult.station_coverage.station_short_name} Janamaithri Beat Zone</b><br/>
+          Operational Radius: ${routeResult.station_coverage.operational_radius_km} km (Close City Coverage)
+        `, { sticky: true, direction: 'top' });
+        layerRouteRef.current.addLayer(boundary);
+
+        // Depot Station Marker
+        const depotIcon = L.divIcon({
+          className: 'depot-pin',
+          html: `
+            <div style="background-color:#0f172a; border:2.5px solid #38bdf8; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#38bdf8; font-size:10px; font-weight:800; box-shadow:0 3px 8px rgba(0,0,0,0.5);" title="${routeResult.station_coverage.station_name}">
+              DEP
+            </div>
+          `,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+        const depotMarker = L.marker(routeResult.station_coverage.depot_coords, { icon: depotIcon });
+        depotMarker.bindPopup(`
+          <div style="font-family:var(--font-sans); padding:4px; max-width:260px;">
+            <div style="font-size:10.5px; font-weight:800; color:#0284c7; text-transform:uppercase;">POLICE STATION DEPOT</div>
+            <div style="font-weight:700; font-size:13px; color:#0f172a; margin-top:2px;">${routeResult.station_coverage.station_name}</div>
+            <div style="font-size:11px; color:#475569; margin-top:4px;">
+              <b>Jurisdiction:</b> ${routeResult.station_coverage.jurisdiction}
+            </div>
+            <div style="font-size:11px; color:#0369a1; margin-top:4px; font-weight:600;">
+              Janamaithri Beat Radius: ${routeResult.station_coverage.operational_radius_km} km
+            </div>
+          </div>
+        `);
+        layerRouteRef.current.addLayer(depotMarker);
+      }
+
+      // 2. Individual Vehicle Routes with Distinct Theming
+      routeResult.vehicle_routes.forEach((vr, vrIdx) => {
+        const vColor = vr.theme_color || (vrIdx === 0 ? '#1d4ed8' : (vrIdx === 1 ? '#d97706' : '#e11d48'));
+        
         // Draw real OSRM road polyline
         if (vr.route_polyline && vr.route_polyline.length > 0) {
           const polyline = L.polyline(vr.route_polyline, {
-            color: '#2563eb',
+            color: vColor,
             weight: 4.5,
-            opacity: 0.85,
+            opacity: 0.88,
             lineJoin: 'round'
           });
+          polyline.bindTooltip(`
+            <b>${vr.vehicle_name}</b> (${vr.call_sign || 'Patrol'})<br/>
+            ${vr.beat_sector || 'Station Beat'} • ${vr.total_distance_km} km
+          `, { sticky: true });
           layerRouteRef.current.addLayer(polyline);
         }
 
@@ -564,24 +635,38 @@ export function App() {
           const cpIcon = L.divIcon({
             className: 'custom-cp-icon',
             html: `
-              <div style="background-color:#ea580c; border:2px solid #ffffff; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#ffffff; font-size:11px; font-weight:700; box-shadow:0 2px 5px rgba(0,0,0,0.4);" title="${cp.name}">
+              <div style="background-color:${vColor}; border:2px solid #ffffff; width:25px; height:25px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#ffffff; font-size:11px; font-weight:700; box-shadow:0 2px 6px rgba(0,0,0,0.4);" title="${cp.name}">
                 ${cp.sequence_number}
               </div>
             `,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12]
+            iconSize: [25, 25],
+            iconAnchor: [12.5, 12.5]
           });
 
           const cpMarker = L.marker(cp.coords, { icon: cpIcon });
           cpMarker.bindPopup(`
-            <div style="font-family:var(--font-sans); padding:4px; max-width:260px;">
-              <div style="font-size:11px; font-weight:700; color:#ea580c;">CHECKPOINT #${cp.sequence_number}</div>
-              <div style="font-weight:700; font-size:13px; color:#0f172a; margin-top:2px;">${cp.name}</div>
-              <div style="font-size:11px; color:#64748b; font-family:var(--font-mono); margin-top:2px;">
+            <div style="font-family:var(--font-sans); padding:4px; max-width:280px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <span style="font-size:10px; font-weight:800; color:${vColor};">CHECKPOINT #${cp.sequence_number}</span>
+                <span style="font-size:9.5px; font-weight:700; background:#f1f5f9; padding:1px 5px; border-radius:3px; color:#475569;">${cp.checkpoint_label || 'POINT BOOK'}</span>
+              </div>
+              <div style="font-weight:700; font-size:13px; color:#0f172a;">${cp.name}</div>
+              <div style="font-size:10.5px; color:#64748b; margin-top:2px;">
+                <b>Unit:</b> ${vr.call_sign || vr.vehicle_name} | <b>Sector:</b> ${cp.beat_sector || vr.beat_sector}
+              </div>
+              <div style="font-size:11px; color:#475569; font-family:var(--font-mono); margin-top:4px;">
                 Arr: +${cp.arrival_minute}m | Dwell: ${cp.dwell_minutes}m | Dep: +${cp.departure_minute}m
               </div>
-              <div style="font-size:11.5px; background-color:#f8fafc; border:1px solid #e2e8f0; border-radius:3px; padding:6px; margin-top:6px; line-height:1.35;">
-                <b>Reason:</b> ${cp.justification}
+              <div style="font-size:11px; color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:3px; padding:4px 6px; margin-top:5px;">
+                <b>Target Crime:</b> ${cp.target_crime} (${cp.ipc_sections})
+              </div>
+              ${cp.sop_action ? `
+                <div style="font-size:11px; color:#166534; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:3px; padding:5px 7px; margin-top:5px; line-height:1.35;">
+                  <b>Kerala Police SOP:</b> ${cp.sop_action}
+                </div>
+              ` : ''}
+              <div style="font-size:10.5px; color:#64748b; margin-top:5px; line-height:1.3;">
+                ${cp.justification}
               </div>
             </div>
           `);
@@ -599,12 +684,13 @@ export function App() {
   const handleOptimizeRoute = async () => {
     setOptimizing(true);
     try {
+      const activeDepotId = selectedStation !== 'all' ? selectedStation : (stations[0]?.id || 'ekm_central');
       const res = await fetch('/api/routing/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           city_id: selectedCity,
-          start_station_id: selectedStation !== 'all' ? selectedStation : 'ekm_central',
+          start_station_id: activeDepotId,
           patrol_duration_minutes: patrolDuration,
           num_vehicles: patrolVehicles,
           vehicle_type: vehicleType,
@@ -616,6 +702,11 @@ export function App() {
       const data = await res.json();
       setRouteResult(data);
       setShowRoute(true);
+
+      // Focus map on local station beat area
+      if (data.station_coverage?.depot_coords && mapInstanceRef.current) {
+        mapInstanceRef.current.setView(data.station_coverage.depot_coords, 14, { animate: true });
+      }
     } catch (err) {
       console.error('Optimization error:', err);
     } finally {
@@ -980,6 +1071,16 @@ export function App() {
             {activeTab === 'routing' && (
               <>
                 <div className="panel-card">
+                  <div className="kerala-patrol-banner">
+                    <Shield size={16} color="#166534" style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div>
+                      <div className="kerala-patrol-banner-title">Kerala Police Janamaithri Beat Scheme Active</div>
+                      <div className="kerala-patrol-banner-desc">
+                        Strict localized station jurisdiction (~2.5 - 3.8 km radius) • Dedicated non-overlapping beat sectors per car • Registered Point Books & e-Beat verification.
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="card-title">Patrol Mission Parameters</div>
                   
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -988,18 +1089,20 @@ export function App() {
                       <select 
                         className="select-input" 
                         style={{ width: '100%', marginTop: '3px' }}
-                        value={selectedStation !== 'all' ? selectedStation : 'ekm_central'}
+                        value={selectedStation !== 'all' ? selectedStation : (stations[0]?.id || 'ekm_central')}
                         onChange={e => setSelectedStation(e.target.value)}
                       >
                         {stations.map(s => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.short_name}) • {s.operational_radius_km || 3.2} km Beat
+                          </option>
                         ))}
                       </select>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                       <div>
-                        <label className="filter-label">Duration</label>
+                        <label className="filter-label">Patrol Shift Duration</label>
                         <select 
                           className="select-input" 
                           style={{ width: '100%', marginTop: '3px' }}
@@ -1014,45 +1117,47 @@ export function App() {
                       </div>
 
                       <div>
-                        <label className="filter-label">Vehicles</label>
+                        <label className="filter-label">Patrol Units Dispatched</label>
                         <select 
                           className="select-input" 
                           style={{ width: '100%', marginTop: '3px' }}
                           value={patrolVehicles}
                           onChange={e => setPatrolVehicles(Number(e.target.value))}
                         >
-                          <option value={1}>1 Vehicle Unit</option>
-                          <option value={2}>2 Synchronized Units</option>
+                          <option value={1}>1 Unit (Station Mobile Patrol)</option>
+                          <option value={2}>2 Units (Mobile Bolero + Cheetah Motorcycle)</option>
+                          <option value={3}>3 Units (Mobile + Cheetah Bike + Pink Patrol)</option>
                         </select>
                       </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                       <div>
-                        <label className="filter-label">Vehicle Type</label>
+                        <label className="filter-label">Vehicle Role</label>
                         <select 
                           className="select-input" 
                           style={{ width: '100%', marginTop: '3px' }}
                           value={vehicleType}
                           onChange={e => setVehicleType(e.target.value)}
                         >
-                          <option value="Patrol Car">Patrol Cruiser (28 km/h)</option>
-                          <option value="Beat Motorcycle">Beat Motorcycle (24 km/h)</option>
-                          <option value="Quick Response Team">QRT Van (30 km/h)</option>
+                          <option value="Patrol Car">Station Mobile (Bolero / 22 km/h)</option>
+                          <option value="Beat Motorcycle">Cheetah Motorcycle (20 km/h)</option>
+                          <option value="Pink Police Patrol">Pink Patrol (Women Safety / 22 km/h)</option>
+                          <option value="Quick Response Team">ERSS-112 QRT Van (25 km/h)</option>
                         </select>
                       </div>
 
                       <div>
-                        <label className="filter-label">Priority Focus</label>
+                        <label className="filter-label">Tactical Priority Focus</label>
                         <select 
                           className="select-input" 
                           style={{ width: '100%', marginTop: '3px' }}
                           value={priorityFocus}
                           onChange={e => setPriorityFocus(e.target.value)}
                         >
-                          <option value="balanced">Balanced</option>
-                          <option value="high_intensity_focused">High Severity Focus</option>
-                          <option value="broad_coverage">Broad Beat Coverage</option>
+                          <option value="balanced">Balanced Deterrence</option>
+                          <option value="high_intensity_focused">High Severity Hotspot Focus</option>
+                          <option value="broad_coverage">Broad Janamaithri Beat Coverage</option>
                         </select>
                       </div>
                     </div>
@@ -1066,12 +1171,12 @@ export function App() {
                       {optimizing ? (
                         <>
                           <RefreshCw size={14} className="spin" />
-                          <span>Solving Road Orienteering Model...</span>
+                          <span>Solving Janamaithri Road Routes...</span>
                         </>
                       ) : (
                         <>
                           <Crosshair size={14} />
-                          <span>Calculate Optimized Road Route</span>
+                          <span>Calculate Realistic Beat Routes</span>
                         </>
                       )}
                     </button>
@@ -1082,61 +1187,111 @@ export function App() {
                 {routeResult && routeResult.vehicle_routes && (
                   <div className="panel-card">
                     <div className="card-title">
-                      <span>Recommended Route Solution</span>
+                      <span>Recommended Beat Solutions</span>
                       <span style={{ fontSize: '10.5px', color: '#047857', fontWeight: 700 }}>
                         +{routeResult.baseline_comparison.coverage_gain_percent}% vs Naive
                       </span>
                     </div>
 
-                    {routeResult.vehicle_routes.map((vr) => (
-                      <div key={vr.vehicle_id} style={{ marginBottom: '12px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', fontWeight: 600, color: '#1e3a8a' }}>
-                          <span>{vr.vehicle_name}</span>
-                          <span>{vr.total_distance_km} km ({vr.total_mission_time_minutes} min)</span>
+                    {routeResult.station_coverage && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-light)', borderRadius: '4px', marginBottom: '10px', fontSize: '11px' }}>
+                        <div>
+                          <b>Base Station:</b> {routeResult.station_coverage.station_short_name}
                         </div>
+                        <div style={{ color: '#0284c7', fontWeight: 700 }}>
+                          Beat Radius: {routeResult.station_coverage.operational_radius_km} km
+                        </div>
+                      </div>
+                    )}
 
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', margin: '8px 0' }}>
-                          <div style={{ background: 'var(--bg-secondary)', padding: '5px', borderRadius: '3px', fontSize: '10.5px' }}>
-                            <div style={{ color: 'var(--text-muted)' }}>Stops</div>
-                            <div style={{ fontWeight: 700 }}>{vr.num_checkpoints}</div>
-                          </div>
-                          <div style={{ background: 'var(--bg-secondary)', padding: '5px', borderRadius: '3px', fontSize: '10.5px' }}>
-                            <div style={{ color: 'var(--text-muted)' }}>Dwell Time</div>
-                            <div style={{ fontWeight: 700 }}>{vr.dwell_time_minutes}m</div>
-                          </div>
-                          <div style={{ background: 'var(--bg-secondary)', padding: '5px', borderRadius: '3px', fontSize: '10.5px' }}>
-                            <div style={{ color: 'var(--text-muted)' }}>Coverage</div>
-                            <div style={{ fontWeight: 700 }}>{vr.hotspot_coverage_score}</div>
-                          </div>
-                        </div>
-
-                        {/* Checkpoints Schedule */}
-                        <div className="card-title" style={{ fontSize: '11px', marginTop: '10px' }}>
-                          Ordered Checkpoints & Explanations
-                        </div>
-                        <div className="checkpoint-timeline">
-                          {vr.checkpoints.map(cp => (
-                            <div key={cp.sequence_number} className="checkpoint-item">
-                              <div className="checkpoint-badge">{cp.sequence_number}</div>
-                              <div className="checkpoint-content">
-                                <div className="checkpoint-name">{cp.name}</div>
-                                <div className="checkpoint-timing">
-                                  Arr: +{cp.arrival_minute}m | Dwell: ${cp.dwell_minutes}m | Dep: +{cp.departure_minute}m
-                                </div>
-                                <div className="checkpoint-justification">
-                                  <b>Target:</b> {cp.target_crime} ({cp.ipc_sections})<br/>
-                                  {cp.justification}
+                    {routeResult.vehicle_routes.map((vr) => {
+                      const vColor = vr.theme_color || '#1d4ed8';
+                      return (
+                        <div key={vr.vehicle_id} className="vehicle-card" style={{ borderLeft: `4px solid ${vColor}` }}>
+                          <div className="vehicle-card-header">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span className="callsign-badge" style={{ backgroundColor: vColor }}>
+                                {vr.call_sign || 'PATROL'}
+                              </span>
+                              <div>
+                                <div className="beat-sector-title">{vr.vehicle_name}</div>
+                                <div className="vehicle-model-meta">
+                                  {vr.beat_sector} • {vr.vehicle_model || 'Kerala Police'}
                                 </div>
                               </div>
                             </div>
-                          ))}
+                            <span className="coverage-radius-pill">
+                              {vr.coverage_radius_km || 3.2} km Beat
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', margin: '8px 0' }}>
+                            <div style={{ background: 'var(--bg-secondary)', padding: '5px', borderRadius: '3px', fontSize: '10.5px' }}>
+                              <div style={{ color: 'var(--text-muted)' }}>Distance</div>
+                              <div style={{ fontWeight: 700 }}>{vr.total_distance_km} km</div>
+                            </div>
+                            <div style={{ background: 'var(--bg-secondary)', padding: '5px', borderRadius: '3px', fontSize: '10.5px' }}>
+                              <div style={{ color: 'var(--text-muted)' }}>Drive / Dwell</div>
+                              <div style={{ fontWeight: 700 }}>{vr.driving_time_minutes}m / {vr.dwell_time_minutes}m</div>
+                            </div>
+                            <div style={{ background: 'var(--bg-secondary)', padding: '5px', borderRadius: '3px', fontSize: '10.5px' }}>
+                              <div style={{ color: 'var(--text-muted)' }}>Checkpoints</div>
+                              <div style={{ fontWeight: 700 }}>{vr.num_checkpoints} Stops</div>
+                            </div>
+                            <div style={{ background: 'var(--bg-secondary)', padding: '5px', borderRadius: '3px', fontSize: '10.5px' }}>
+                              <div style={{ color: 'var(--text-muted)' }}>Deterrence</div>
+                              <div style={{ fontWeight: 700, color: '#047857' }}>{vr.hotspot_coverage_score}</div>
+                            </div>
+                          </div>
+
+                          {/* Checkpoints Schedule */}
+                          <div className="card-title" style={{ fontSize: '11px', marginTop: '10px' }}>
+                            Ordered Checkpoints & Kerala Police SOPs
+                          </div>
+                          <div className="checkpoint-timeline">
+                            {vr.checkpoints.map(cp => {
+                              const typeClass = (cp.checkpoint_type || 'point_book').toLowerCase().replace(/_/g, '-');
+                              return (
+                                <div key={cp.sequence_number} className="checkpoint-item">
+                                  <div className="checkpoint-badge" style={{ backgroundColor: vColor }}>
+                                    {cp.sequence_number}
+                                  </div>
+                                  <div className="checkpoint-content">
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                                      <span className={`checkpoint-type-tag type-${typeClass}`}>
+                                        {cp.checkpoint_label || 'POINT BOOK'}
+                                      </span>
+                                      {cp.code && (
+                                        <span style={{ fontSize: '9.5px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                                          {cp.code}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="checkpoint-name">{cp.name}</div>
+                                    <div className="checkpoint-timing">
+                                      Arr: +{cp.arrival_minute}m | Dwell: {cp.dwell_minutes}m | Dep: +{cp.departure_minute}m
+                                    </div>
+                                    <div className="checkpoint-justification">
+                                      <b>Target:</b> {cp.target_crime} ({cp.ipc_sections})<br/>
+                                      {cp.justification}
+                                    </div>
+                                    {cp.sop_action && (
+                                      <div className="checkpoint-sop-box">
+                                        <b>Kerala Police SOP:</b> {cp.sop_action}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     {/* Operational Disclaimer */}
-                    <div style={{ marginTop: '10px', padding: '8px', backgroundColor: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '4px', fontSize: '11px', color: '#92400e' }}>
-                      <b>Supervisor Oversight Notice:</b> Patrol routes are algorithmic suggestions for visible deterrent presence. Hotspot scores represent model estimates, not deterministic certainties. Routes must undergo Station House Officer (SHO) review before tactical dispatch.
+                    <div style={{ marginTop: '10px', padding: '8px', backgroundColor: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '4px', fontSize: '11px', color: '#92400e', lineHeight: 1.4 }}>
+                      <b>Kerala Police Statutory Notice (Janamaithri Suraksha):</b> Patrol routes are calibrated to Section 64/65 of the Kerala Police Act 2011 and official e-Beat registers. Coverage is strictly restricted to designated station beats to prevent jurisdictional overreach. Mandatory Station House Officer (SHO) review is required prior to tactical roll-call.
                     </div>
                   </div>
                 )}
