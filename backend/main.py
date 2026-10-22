@@ -235,7 +235,7 @@ def optimize_patrol_route(req: OptimizeRequest):
 
 @app.get("/api/provenance/audit")
 def get_provenance_audit():
-    """Returns full legal investigation findings and statutory compliance declarations."""
+    """Returns statutory legal compliance declarations and empirical audit findings."""
     return DATA_DISCOVERY_INVESTIGATION
 
 

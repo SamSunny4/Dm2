@@ -13,7 +13,11 @@ import {
   Search,
   Sliders,
   Layers,
-  X
+  X,
+  ExternalLink,
+  FileText,
+  Lock,
+  ShieldAlert
 } from 'lucide-react';
 
 interface City {
@@ -135,6 +139,30 @@ interface OptimizationResponse {
   equity_and_ethical_audit: any;
 }
 
+interface ProvenanceSource {
+  source_name: string;
+  url: string;
+  nature_of_service: string;
+  bulk_access_available: boolean;
+  access_mechanism?: string;
+  spatial_utility?: string;
+  statutory_limitations: string;
+  verdict: string;
+}
+
+interface ProvenanceAudit {
+  title: string;
+  investigation_date: string;
+  target_jurisdictions: string[];
+  sources_investigated: ProvenanceSource[];
+  privacy_protocol: {
+    pii_removal: string;
+    coordinate_treatment: string;
+    temporal_distinction: string;
+    provenance_tag: string;
+  };
+}
+
 interface BasemapProvider {
   id: string;
   name: string;
@@ -148,6 +176,7 @@ export function App() {
   // Application State
   const [cities, setCities] = useState<City[]>([]);
   const [selectedCity, setSelectedCity] = useState<string>('kochi');
+  const [provenanceAudit, setProvenanceAudit] = useState<ProvenanceAudit | null>(null);
   const [stations, setStations] = useState<Station[]>([]);
   const [selectedStation, setSelectedStation] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -237,6 +266,11 @@ export function App() {
       .then(res => res.json())
       .then(data => setBasemaps(data))
       .catch(err => console.error('Error fetching basemaps:', err));
+
+    fetch('/api/provenance/audit')
+      .then(res => res.json())
+      .then(data => setProvenanceAudit(data))
+      .catch(err => console.error('Error fetching provenance audit:', err));
   }, []);
 
   // 2. Initialize Leaflet Map
@@ -735,6 +769,33 @@ export function App() {
     } finally {
       setPdfDownloading(false);
     }
+  };
+
+  // Preset loaders for demonstration
+  const loadPresetFIR = () => {
+    setImportForm({
+      police_station_id: 'ekm_central',
+      fir_number: '342/2026',
+      crime_category: 'THEFT_SNATCHING',
+      registration_time: new Date().toISOString().slice(0, 16),
+      occurrence_time: new Date(Date.now() - 4 * 3600000).toISOString().slice(0, 16),
+      locality_name: 'Near Shenoys Cinema, MG Road',
+      raw_narrative: 'Complainant Sri Suresh Kumar (Phone: 9847012345) reported snatching of gold chain near door no. 42/108.'
+    });
+    setImportStatus(null);
+  };
+
+  const loadPresetArrest = () => {
+    setImportForm({
+      police_station_id: 'ekm_central',
+      fir_number: '104/2026',
+      crime_category: 'NARCOTICS_NDPS',
+      registration_time: new Date().toISOString().slice(0, 16),
+      occurrence_time: new Date(Date.now() - 2 * 3600000).toISOString().slice(0, 16),
+      locality_name: 'Marine Drive Walkway / Rainbow Bridge',
+      raw_narrative: 'Custodial Record: Arrestee Sri Rajeev K. (Relative/Father: Sri Krishnan Nair, Phone: 9846199887) apprehended with contraband near Marine Drive. Address: Flat No. 3B, Menaka.'
+    });
+    setImportStatus(null);
   };
 
   // Handle Authorized FIR Ingestion & PII Scrubbing Demo
@@ -1301,27 +1362,96 @@ export function App() {
             {/* TAB 3: LEGAL PROVENANCE & FIR INGESTION */}
             {activeTab === 'provenance' && (
               <>
-                <div className="panel-card">
-                  <div className="card-title">Legal Discovery & Access Findings</div>
-                  <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.45, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div>
-                      <b>1. Kerala Police THUNA Portal:</b> Requires case-specific FIR Number, Year, Station, and CAPTCHA. No lawful public bulk API exists. Bulk scraping violates access controls and terms of service.
-                    </div>
-                    <div>
-                      <b>2. Statutory Privacy Safeguards:</b> Under Supreme Court directives (<i>Youth Bar Association v. UOI</i>) and statutory provisions (Sec 228A IPC / Sec 72 BNS, POCSO), unredacted FIRs containing victim identities cannot be publicly harvested or exposed.
-                    </div>
-                    <div>
-                      <b>3. System Protocol:</b> Real incident-level data is ingested exclusively via authorized redacted channels with automated PII scrubbing. Benchmark evaluations are explicitly stamped <code>SYNTHETIC_CALIBRATED_BENCHMARK</code>.
-                    </div>
+                {/* Official Statutory Prohibition Notice */}
+                <div style={{
+                  backgroundColor: '#fef2f2',
+                  border: '1px solid #f87171',
+                  borderLeft: '4px solid #dc2626',
+                  borderRadius: '6px',
+                  padding: '10px 12px',
+                  marginBottom: '10px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#991b1b', fontWeight: 700, fontSize: '12px' }}>
+                    <ShieldAlert size={15} color="#dc2626" />
+                    <span>SCRAPING PROHIBITED: STATUTORY MANDATE ENFORCED</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#7f1d1d', marginTop: '6px', lineHeight: 1.45 }}>
+                    In accordance with user directive (<b>"if illegal do not proceed"</b>), direct programmatic harvesting or automated scraping of Kerala Police portals (including <code>thuna.keralapolice.gov.in/arrest-search</code>) is <b>strictly barred</b>. Scraping violates the <b>Digital Personal Data Protection (DPDP) Act 2023</b>, <b>IT Act 2000 (Sec 43/66)</b>, and Supreme Court precedent (<i>Youth Bar Association of India v. UOI</i>). Furthermore, arrest search records contain <b>zero spatial coordinates</b>, rendering them unsuited for GIS patrol optimization. All analysis relies on authorized departmental ingestion with automated PII redaction or SCRB-calibrated benchmark distributions.
                   </div>
                 </div>
 
-                {/* FIR Document Ingestion Demo */}
+                {/* Empirical Investigation Findings for Investigated Portals */}
                 <div className="panel-card">
-                  <div className="card-title">Authorized FIR Ingestion Pipeline (PII Scrubbing)</div>
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>Portal Audit & Scraping Feasibility</span>
+                    <Lock size={13} color="#64748b" />
+                  </div>
+
+                  {provenanceAudit?.sources_investigated ? (
+                    provenanceAudit.sources_investigated.map((src, idx) => {
+                      const isArrestSearch = src.url.includes('arrest-search');
+                      return (
+                        <div key={idx} className={`audit-card ${isArrestSearch ? 'audit-card-highlight' : ''}`}>
+                          <div className="audit-header-row">
+                            <span className="audit-title">{src.source_name}</span>
+                            <span className={`audit-badge ${isArrestSearch ? 'audit-badge-danger' : (!src.bulk_access_available ? 'audit-badge-warning' : 'audit-badge-info')}`}>
+                              {isArrestSearch ? 'SCRAPING PROHIBITED' : (!src.bulk_access_available ? 'RESTRICTED / NO BULK' : 'MACRO AGGREGATES')}
+                            </span>
+                          </div>
+
+                          <a href={src.url} target="_blank" rel="noopener noreferrer" className="audit-link">
+                            <span>{src.url}</span>
+                            <ExternalLink size={10} />
+                          </a>
+
+                          <div className="audit-desc">
+                            <b>Service:</b> {src.nature_of_service}
+                          </div>
+
+                          {src.spatial_utility && (
+                            <div className="audit-callout-box danger-callout">
+                              <b>Spatial Utility Defect:</b> {src.spatial_utility}
+                            </div>
+                          )}
+
+                          <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.35 }}>
+                            <b>Statutory Constraints:</b> {src.statutory_limitations}
+                          </div>
+
+                          <div className="audit-callout-box" style={{ marginTop: '5px' }}>
+                            <b>Compliance Verdict:</b> {src.verdict}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Loading compliance findings...</div>
+                  )}
+                </div>
+
+                {/* Authorized FIR Ingestion Demo */}
+                <div className="panel-card">
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>Lawful Authorized Ingestion Pipeline</span>
+                    <FileText size={13} color="#64748b" />
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '8px', lineHeight: 1.4 }}>
+                    Authorized departmental records are ingested through strict automated PII scrubbing (redacting civilian names, relatives, phone numbers, Aadhaar, and residential addresses):
+                  </div>
+
+                  {/* Preset Buttons */}
+                  <div className="preset-button-row">
+                    <button type="button" className="preset-btn" onClick={loadPresetFIR}>
+                      Load Sample FIR (with PII)
+                    </button>
+                    <button type="button" className="preset-btn" onClick={loadPresetArrest}>
+                      Load Sample Arrest Memo (with PII)
+                    </button>
+                  </div>
+
                   <form onSubmit={handleImportFIR} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div>
-                      <label className="filter-label">Station</label>
+                      <label className="filter-label">Station Jurisdiction</label>
                       <select 
                         className="select-input" 
                         style={{ width: '100%' }}
@@ -1336,7 +1466,7 @@ export function App() {
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                       <div>
-                        <label className="filter-label">FIR Number</label>
+                        <label className="filter-label">Crime / FIR Number</label>
                         <input 
                           type="text" 
                           className="text-input" 
@@ -1346,7 +1476,7 @@ export function App() {
                         />
                       </div>
                       <div>
-                        <label className="filter-label">Category</label>
+                        <label className="filter-label">Crime Head</label>
                         <select 
                           className="select-input" 
                           style={{ width: '100%' }}
@@ -1384,7 +1514,7 @@ export function App() {
                     </div>
 
                     <div>
-                      <label className="filter-label">Locality / Sector</label>
+                      <label className="filter-label">Verified Beat Locality / Sector</label>
                       <input 
                         type="text" 
                         className="text-input" 
@@ -1395,7 +1525,7 @@ export function App() {
                     </div>
 
                     <div>
-                      <label className="filter-label">Raw Narrative (Contains Test PII)</label>
+                      <label className="filter-label">Raw Record Narrative (Contains Personal Identifiers)</label>
                       <textarea 
                         className="text-input" 
                         rows={2} 
@@ -1407,7 +1537,7 @@ export function App() {
 
                     <button type="submit" className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}>
                       <CheckCircle2 size={13} color="#059669" />
-                      <span>Sanitize PII & Ingest Record</span>
+                      <span>Execute PII Redaction & Ingest</span>
                     </button>
                   </form>
 
@@ -1416,6 +1546,9 @@ export function App() {
                       <div style={{ color: '#166534', fontWeight: 600 }}>{importStatus.message}</div>
                       <div style={{ marginTop: '4px', color: '#334155' }}>
                         <b>Scrubbed Notes:</b> {importStatus.sanitized_record.sanitized_notes}
+                      </div>
+                      <div style={{ marginTop: '2px', color: '#64748b', fontSize: '10px' }}>
+                        Provenance Tag: <code>{importStatus.sanitized_record.provenance}</code> | PII Status: Sanitized
                       </div>
                     </div>
                   )}

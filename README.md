@@ -40,11 +40,15 @@ New urban jurisdictions can be registered in [`backend/config.py`](file:///e:/Dm
 1. **Kerala Police THUNA Portal (`thuna.keralapolice.gov.in`)**:
    - Access is restricted to case-by-case lookup requiring specific FIR Number, Year, Police District, Station, and CAPTCHA verification.
    - **No lawful public bulk API exists.** Automated harvesting or CAPTCHA bypass is strictly prohibited by terms of service and access control regulations.
-2. **Statutory PII Privacy Protections**:
+2. **Kerala Police THUNA Arrest Search (`thuna.keralapolice.gov.in/arrest-search`)**:
+   - **Formal Audit Verdict: Scraping Strictly Barred & Technically Unsuitable.**
+   - **Legal Prohibition**: In accordance with statutory law and user directive (*"if illegal do not proceed"*), direct programmatic scraping is **strictly barred**. Mass automated harvesting of citizen arrestee records violates the **Digital Personal Data Protection (DPDP) Act, 2023**, the **IT Act 2000 (Section 43 & Section 66)**, and Supreme Court precedent (*Youth Bar Association of India v. Union of India*, 2016).
+   - **Zero Micro-Spatial Data**: Arrest search records only contain custodial information (Arrestee Name, Relative Name, Police Station, Crime Number, Date). They contain **zero spatial coordinates (latitude/longitude)**, zero street intersections, and zero incident occurrence landmarks. Therefore, arrest search records are fundamentally incapable of supporting DBSCAN hotspot mining, KDE density, or turn-by-turn road route optimization.
+3. **Statutory PII Privacy Protections**:
    - Under Supreme Court rulings (*Youth Bar Association of India v. Union of India*, 2016) and Indian penal provisions (Section 228A IPC / Section 72 BNS, POCSO Act, Section 74 Juvenile Justice Act), unredacted FIRs containing complainant/victim identities, minor protection details, or sensitive narrative text cannot be harvested or exposed.
-3. **National Crime Records Bureau (NCRB / `data.gov.in`)**:
+4. **National Crime Records Bureau (NCRB / `data.gov.in`)**:
    - Only publishes macro district and state-level annual category totals; lacks micro-level street coordinates and incident timestamps.
-4. **Implementation Protocol**:
+5. **Implementation Protocol**:
    - The application includes an **Authorized FIR Ingestor** ([`backend/data_discovery.py`](file:///e:/Dm2/backend/data_discovery.py)) that strips PII (names, phone numbers, Aadhaar, door numbers) and enforces distinct occurrence vs registration timestamps.
    - The out-of-the-box demonstration dataset is explicitly tagged as `SYNTHETIC_CALIBRATED_BENCHMARK`, calibrated against published Kerala SCRB category proportions and authentic Kochi police beat anchors.
 

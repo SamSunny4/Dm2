@@ -29,13 +29,23 @@ DATA_DISCOVERY_INVESTIGATION = {
     "target_jurisdictions": ["Kochi City Police", "Thiruvananthapuram City", "Kozhikode City", "Thrissur City"],
     "sources_investigated": [
         {
-            "source_name": "Kerala Police THUNA Citizen Portal",
+            "source_name": "Kerala Police THUNA Citizen Portal (General FIR Services)",
             "url": "https://thuna.keralapolice.gov.in",
             "nature_of_service": "Citizen FIR Download & Online Complaint Tracking",
             "bulk_access_available": False,
             "access_mechanism": "Individual case-by-case lookup requiring FIR number, year, police district, police station, and CAPTCHA verification.",
             "statutory_limitations": "Under Supreme Court guidelines (Youth Bar Association v. UOI, 2016) and statutory privacy provisions (Section 228A IPC / Sec 72 BNS, POCSO Act, Section 74 JJ Act), public bulk harvesting or automated scraping of unredacted FIRs containing victim identities, sensitive sexual offenses, or minor details is strictly prohibited.",
             "verdict": "No open bulk API. Direct programmatic harvesting violates access controls and terms of service. Lawful usage requires authorized departmental export or sanctioned OCR import of authorized redacted files."
+        },
+        {
+            "source_name": "Kerala Police THUNA Arrest Search Portal",
+            "url": "https://thuna.keralapolice.gov.in/arrest-search",
+            "nature_of_service": "Custodial Arrest Verification & Relative Notification Lookup",
+            "bulk_access_available": False,
+            "access_mechanism": "Targeted query interface requiring Person Name, Relative Name, District, Police Station, and Date Range. Client-side Single Page Application (SPA) protected by session tokens and rate limits.",
+            "spatial_utility": "ZERO MICRO-SPATIAL DATA. Records contain custodial fields (Name, Relative Name, Gender, Age, Arrest Date/Time, Crime No, Police Station), but COMPLETELY LACK spatial coordinates (latitude/longitude), street addresses, or occurrence scene landmarks.",
+            "statutory_limitations": "1. Digital Personal Data Protection (DPDP) Act 2023: Scraping and aggregating individual citizen arrest records constitutes unauthorized personal data harvesting.\n2. Supreme Court Ruling (Youth Bar Association, 2016): Mandates strict protection against indiscriminate disclosure of criminal records that could violate privacy or statutory protections (POCSO, Sec 228A IPC / Sec 72 BNS, Sec 74 Juvenile Justice Act).\n3. Information Technology Act 2000 (Sec 43/66): Automated bot scraping and evasion of rate-limits against state police infrastructure violates terms of service.",
+            "verdict": "SCRAPING PROHIBITED & SPATIALLY DEFECTIVE. Automated harvesting is legally barred and technically ineffective for spatial AI (DBSCAN / KDE / Route Optimization) due to absent coordinate geometries. Lawful integration requires authorized departmental CSV/JSON extracts where names/PII are scrubbed and incidents are linked to station beat coordinates."
         },
         {
             "source_name": "Open Government Data (OGD) Platform India / NCRB",
@@ -83,7 +93,7 @@ class AuthorizedFIRIngestor:
     DOOR_NO_REGEX = re.compile(r'\b(?:Door\s*No\.?|House\s*No\.?|Bldg\.?|Flat\s*No\.?)\s*[:#\d\w\/-]+', re.IGNORECASE)
     NAME_PATTERNS = [
         re.compile(r'\b(?:Sri|Smt|Mr|Mrs|Kumari|Dr)\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b'),
-        re.compile(r'\b(?:Complainant|Accused|Informant|Victim)\s*:\s*([^,\n\r]+)', re.IGNORECASE)
+        re.compile(r'\b(?:Complainant|Accused|Informant|Victim|Arrestee|Relative|Father|Guardian)\s*:\s*([^,\n\r]+)', re.IGNORECASE)
     ]
 
     @classmethod
