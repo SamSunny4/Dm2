@@ -57,6 +57,7 @@ The system synthesizes data across five distinct legal, institutional, and geogr
 | **Kerala SCRB (State Crime Records Bureau)** | `keralapolice.gov.in` (Annual Reports) | Station-level offense counts & commissionerate profiles | Serves as official statistical ground-truth for category weighting and station activity ratios. |
 | **OpenStreetMap (OSM) & OSRM** | `project-osrm.org` / `nominatim.openstreetmap.org` | Road network vectors, turn restrictions, speed profiles, local gazetteer | Graph routing for vehicle movement, geodesic path calculations, and street-name reverse geocoding. |
 | **Kerala Police Janamaithri Suraksha Beats** | Departmental Beat Registers & Station Manuals | Official Point Books, e-Beat (Pol-Beat) QR checkpoints, Kavala nakas | Provides authentic physical patrol anchors, shop shutter check posts, and station operational radii. |
+| **Kerala Regional News Outlets (OSINT)** | *The Hindu (Kochi/Kerala)*, *Onmanorama*, *Mathrubhumi*, *Times of India*, *Kerala Kaumudi* | Published crime reports, verified placenames, commercial hubs, drug seizures | **Active OSINT Mining Channel.** Extracted, geocoded to station beat coordinates, PII-redacted, and synced to live map layers and patrol routing. |
 
 ### 2.2 Authorized Ingestion & PII Redaction Pipeline
 For deploying real-world police FIR extracts, [`backend/data_discovery.py`](file:///e:/Dm2/backend/data_discovery.py) implements the `AuthorizedFIRIngestor` pipeline:
@@ -67,6 +68,12 @@ For deploying real-world police FIR extracts, [`backend/data_discovery.py`](file
   - Residential Door/House numbers: `r'\b(?:Door|House|Bldg|Flat)\s*No\.?\s*[:#\d\w\/-]+'` $\rightarrow$ `[ADDRESS_REDACTED]`
   - Named Entities: Complainants, victims, accused, and relatives replaced with `[NAME_REDACTED]`.
 - **Temporal Integrity**: Enforces strict separation between **incident occurrence time** and **FIR registration time**. Missing occurrence times are preserved as `None` with `occurrence_time_unknown = True` rather than backfilled.
+
+### 2.3 Kerala Crime News OSINT Mining & Spatial Geocoding Engine
+Implemented in [`backend/news_miner.py`](file:///e:/Dm2/backend/news_miner.py) and exposed via `/api/news/*`:
+- **Automated Placename & Entity Resolution**: Cross-references reported crime locations against the Local Police Gazetteer and OpenStreetMap Nominatim with municipal bounding constraints.
+- **Penal Classification**: Maps reported offense narratives (e.g., dacoity, MDMA trafficking, vehicle lifting, chain snatching) to standardized statutory offense heads (IPC / BNS sections).
+- **Dynamic Map Synchronization**: Ingests new verified news crime events directly into active city datasets, recalculating DBSCAN spatial clusters, 400m grid choropleths, predictive forecasts, and patrol routes.
 
 ---
 

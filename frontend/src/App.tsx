@@ -17,7 +17,9 @@ import {
   ExternalLink,
   FileText,
   Lock,
-  ShieldAlert
+  ShieldAlert,
+  Radio,
+  Globe
 } from 'lucide-react';
 
 interface City {
@@ -172,6 +174,36 @@ interface BasemapProvider {
   is_default: boolean;
 }
 
+interface NewsEvent {
+  news_id: string;
+  city_id: string;
+  source_name: string;
+  source_id: string;
+  headline: string;
+  source_url: string;
+  published_date: string;
+  placename: string;
+  police_station_id: string;
+  police_station_name: string;
+  crime_category: string;
+  ipc_bns_section: string;
+  severity_weight: number;
+  latitude: number;
+  longitude: number;
+  hour_of_day: number;
+  sanitized_summary: string;
+  verified_by_reporter: boolean;
+}
+
+interface NewsSource {
+  id: string;
+  name: string;
+  url: string;
+  credibility_rating: string;
+  coverage: string;
+  focus_areas: string[];
+}
+
 export function App() {
   // Application State
   const [cities, setCities] = useState<City[]>([]);
@@ -198,11 +230,18 @@ export function App() {
   const [priorityFocus, setPriorityFocus] = useState<string>('balanced');
   
   // UI Panels
-  const [activeTab, setActiveTab] = useState<'analytics' | 'routing' | 'provenance'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'routing' | 'provenance' | 'news'>('analytics');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [selectedInspector, setSelectedInspector] = useState<any | null>(null);
   const [pdfDownloading, setPdfDownloading] = useState<boolean>(false);
   
+  // News OSINT State
+  const [newsEvents, setNewsEvents] = useState<NewsEvent[]>([]);
+  const [newsSources, setNewsSources] = useState<NewsSource[]>([]);
+  const [isMiningNews, setIsMiningNews] = useState<boolean>(false);
+  const [miningNewsStatus, setMiningNewsStatus] = useState<string | null>(null);
+  const [showNewsLayer, setShowNewsLayer] = useState<boolean>(true);
+
   // Map API State
   const [basemaps, setBasemaps] = useState<BasemapProvider[]>([]);
   const [activeBasemap, setActiveBasemap] = useState<string>('carto_light');
@@ -249,8 +288,9 @@ export function App() {
   const layerGridRef = useRef<L.LayerGroup>(L.layerGroup());
   const layerHeatmapRef = useRef<L.LayerGroup>(L.layerGroup());
   const layerRouteRef = useRef<L.LayerGroup>(L.layerGroup());
+  const layerNewsRef = useRef<L.LayerGroup>(L.layerGroup());
 
-  // 1. Initial Load: Cities, Taxonomy, Basemaps
+  // 1. Initial Load: Cities, Taxonomy, Basemaps, News Sources
   useEffect(() => {
     fetch('/api/cities')
       .then(res => res.json())
@@ -271,6 +311,11 @@ export function App() {
       .then(res => res.json())
       .then(data => setProvenanceAudit(data))
       .catch(err => console.error('Error fetching provenance audit:', err));
+
+    fetch('/api/news/sources')
+      .then(res => res.json())
+      .then(data => setNewsSources(data))
+      .catch(err => console.error('Error fetching news sources:', err));
   }, []);
 
   // 2. Initialize Leaflet Map
@@ -297,6 +342,7 @@ export function App() {
     layerGridRef.current.addTo(map);
     layerClustersRef.current.addTo(map);
     layerStationsRef.current.addTo(map);
+    layerNewsRef.current.addTo(map);
     layerRouteRef.current.addTo(map);
 
     mapInstanceRef.current = map;
@@ -410,9 +456,34 @@ export function App() {
       mapInstanceRef.current.flyTo(cityObj.center, cityObj.default_zoom, { duration: 1.2 });
     }
 
-    // Refresh data mining
+    // Refresh data mining & news events
     fetchMiningData();
+    fetchNewsData();
   }, [selectedCity, cities]);
+
+  const fetchNewsData = () => {
+    fetch(`/api/news/mined-events?city_id=${selectedCity}`)
+      .then(res => res.json())
+      .then(data => setNewsEvents(data.events || []))
+      .catch(err => console.error('Error fetching news events:', err));
+  };
+
+  const handleMineAndSyncNews = async () => {
+    setIsMiningNews(true);
+    setMiningNewsStatus('Mining Kerala news feeds and geocoding placenames...');
+    try {
+      const res = await fetch(`/api/news/mine-and-sync?city_id=${selectedCity}`, { method: 'POST' });
+      const data = await res.json();
+      setMiningNewsStatus(`Successfully mined & synced ${data.mined_news_count} news reports to active map dataset.`);
+      fetchNewsData();
+      fetchMiningData();
+    } catch (err) {
+      console.error('Error mining news:', err);
+      setMiningNewsStatus('News mining failed. Check server connectivity.');
+    } finally {
+      setIsMiningNews(false);
+    }
+  };
 
   // 7. Reload Data on Filter Changes
   useEffect(() => {
@@ -709,9 +780,58 @@ export function App() {
       });
     }
 
+    // --- G. Mined News Crime Events Layer ---
+    layerNewsRef.current.clearLayers();
+    if (showNewsLayer && newsEvents.length > 0) {
+      newsEvents.forEach(ev => {
+        const beaconIcon = L.divIcon({
+          className: 'custom-news-beacon',
+          html: `<div class="news-pin-beacon" title="${ev.headline}">📰</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        });
+
+        const marker = L.marker([ev.latitude, ev.longitude], { icon: beaconIcon });
+        marker.bindPopup(`
+          <div style="font-family:var(--font-sans); padding:4px; max-width:280px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+              <span style="font-size:9.5px; font-weight:800; background:#ffe4e6; color:#be123c; padding:2px 6px; border-radius:3px;">
+                ${ev.source_name}
+              </span>
+              <span style="font-size:9.5px; color:#64748b; font-family:var(--font-mono);">
+                ${new Date(ev.published_date).toLocaleDateString()}
+              </span>
+            </div>
+            <div style="font-weight:700; font-size:12.5px; color:#0f172a; line-height:1.3; margin-top:2px;">
+              ${ev.headline}
+            </div>
+            <div style="font-size:11px; color:#1e3a8a; margin-top:5px;">
+              <b>Placename:</b> ${ev.placename}
+            </div>
+            <div style="font-size:10.5px; color:#475569; margin-top:2px;">
+              <b>Jurisdiction:</b> ${ev.police_station_name}
+            </div>
+            <div style="font-size:10.5px; color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:3px; padding:3px 5px; margin-top:4px;">
+              <b>Offense:</b> ${ev.crime_category} (${ev.ipc_bns_section})
+            </div>
+            <div style="font-size:10.5px; color:#334155; margin-top:5px; line-height:1.35; background:#f8fafc; padding:4px 6px; border-radius:3px;">
+              ${ev.sanitized_summary}
+            </div>
+            <div style="margin-top:6px; display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:9.5px; color:#059669; font-weight:600;">✓ PII Scrubbed OSINT</span>
+              <a href="${ev.source_url}" target="_blank" rel="noopener noreferrer" style="font-size:10px; color:#2563eb; font-weight:600; text-decoration:none;">
+                View Source ↗
+              </a>
+            </div>
+          </div>
+        `);
+        layerNewsRef.current.addLayer(marker);
+      });
+    }
+
   }, [
-    showStations, showJurisdictions, showClusters, showGrid, showHeatmap, showRoute,
-    stations, clusters, gridCells, routeResult, selectedCity
+    showStations, showJurisdictions, showClusters, showGrid, showHeatmap, showRoute, showNewsLayer,
+    stations, clusters, gridCells, routeResult, newsEvents, selectedCity
   ]);
 
   // Handle Patrol Route Optimization Request
@@ -994,6 +1114,26 @@ export function App() {
             >
               <Shield size={14} />
               <span>Legal Provenance</span>
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'news' ? 'active' : ''}`}
+              onClick={() => setActiveTab('news')}
+              style={{ position: 'relative' }}
+            >
+              <Radio size={14} color={activeTab === 'news' ? '#e11d48' : '#64748b'} />
+              <span>News OSINT</span>
+              {newsEvents.length > 0 && (
+                <span style={{ 
+                  backgroundColor: '#ffe4e6', 
+                  color: '#be123c', 
+                  fontSize: '9.5px', 
+                  fontWeight: 700, 
+                  padding: '1px 5px', 
+                  borderRadius: '10px' 
+                }}>
+                  {newsEvents.length}
+                </span>
+              )}
             </button>
           </div>
 
@@ -1555,6 +1695,138 @@ export function App() {
                 </div>
               </>
             )}
+
+            {/* TAB 4: KERALA NEWS OSINT MINING */}
+            {activeTab === 'news' && (
+              <>
+                {/* News Mining Action Header */}
+                <div className="panel-card" style={{ borderLeft: '3px solid #e11d48' }}>
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Radio size={14} color="#e11d48" />
+                      <span>Kerala News Crime OSINT Miner</span>
+                    </div>
+                    <span className="news-tag news-tag-red">Live Sync</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.4, marginBottom: '10px' }}>
+                    Mines verified crime reporting across Kerala news publications (The Hindu, Onmanorama, Mathrubhumi, Times of India, Kerala Kaumudi). Placenames are extracted and geocoded to station beat coordinates with PII scrubbing.
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <button 
+                      className="btn-mine-news"
+                      onClick={handleMineAndSyncNews}
+                      disabled={isMiningNews}
+                      title="Fetch latest crime reports with placenames and update map"
+                    >
+                      {isMiningNews ? <RefreshCw size={13} className="spin" /> : <Radio size={13} />}
+                      <span>{isMiningNews ? 'Mining News & Geocoding...' : 'Mine Live News & Update Map'}</span>
+                    </button>
+                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                      {newsEvents.length} Verified Incidents Mapped
+                    </div>
+                  </div>
+
+                  {miningNewsStatus && (
+                    <div style={{ marginTop: '8px', padding: '6px 8px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', fontSize: '10.5px', color: '#166534', fontWeight: 600 }}>
+                      ✓ {miningNewsStatus}
+                    </div>
+                  )}
+                </div>
+
+                {/* News Sources Registry */}
+                <div className="panel-card">
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>Registered News Publications ({newsSources.length})</span>
+                    <Globe size={13} color="#64748b" />
+                  </div>
+                  {newsSources.map(src => (
+                    <div key={src.id} className="news-source-card">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
+                        <span style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-primary)' }}>{src.name}</span>
+                        <span className="news-tag news-tag-blue" style={{ fontSize: '9px' }}>{src.credibility_rating}</span>
+                      </div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}><b>Coverage:</b> {src.coverage}</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                        <b>Focus:</b> {src.focus_areas.join(', ')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Mined News Events List */}
+                <div className="panel-card">
+                  <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>Mined News Reports with Placenames ({newsEvents.length})</span>
+                    <span style={{ fontSize: '10px', color: '#e11d48' }}>Geocoded to Beats</span>
+                  </div>
+                  <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                    Click any incident card to focus the map on the verified crime placename:
+                  </div>
+
+                  {newsEvents.length === 0 ? (
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '12px', textAlign: 'center' }}>
+                      No news incidents mapped yet for this city. Click "Mine Live News & Update Map" to fetch.
+                    </div>
+                  ) : (
+                    newsEvents.map(ev => (
+                      <div 
+                        key={ev.news_id} 
+                        className="news-event-card"
+                        onClick={() => {
+                          if (mapInstanceRef.current) {
+                            mapInstanceRef.current.flyTo([ev.latitude, ev.longitude], 15, { duration: 1.2 });
+                          }
+                        }}
+                        title="Click to locate on map"
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span className="news-tag news-tag-red" style={{ fontSize: '9.5px' }}>
+                            {ev.source_name}
+                          </span>
+                          <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                            {new Date(ev.published_date).toLocaleDateString()}
+                          </span>
+                        </div>
+
+                        <div style={{ fontWeight: 700, fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.35 }}>
+                          {ev.headline}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: '#1e3a8a' }}>
+                            📍 {ev.placename}
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Station: <b>{ev.police_station_name}</b> | Offense: <b>{ev.crime_category}</b>
+                        </div>
+
+                        <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.35 }}>
+                          {ev.sanitized_summary}
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', paddingTop: '4px', borderTop: '1px dashed var(--border-light)' }}>
+                          <span style={{ fontSize: '9.5px', color: '#059669', fontWeight: 600 }}>
+                            ✓ PII Redacted
+                          </span>
+                          <a 
+                            href={ev.source_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            onClick={e => e.stopPropagation()} 
+                            style={{ fontSize: '10px', color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}
+                          >
+                            Article ↗
+                          </a>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </aside>
 
@@ -1585,6 +1857,10 @@ export function App() {
               <span>Map Layers</span>
               <Layers size={13} color="#64748b" />
             </div>
+            <label className="layer-toggle-item">
+              <input type="checkbox" checked={showNewsLayer} onChange={e => setShowNewsLayer(e.target.checked)} />
+              <span style={{ color: '#be123c', fontWeight: 600 }}>Mined News Crime Events ({newsEvents.length})</span>
+            </label>
             <label className="layer-toggle-item">
               <input type="checkbox" checked={showHeatmap} onChange={e => setShowHeatmap(e.target.checked)} />
               <span>Incident Density Heatmap</span>
