@@ -19,6 +19,7 @@ from backend.spatial_mining import SpatialMiningEngine
 from backend.routing_engine import PatrolOptimizer
 from backend.pdf_generator import build_pdf_report
 from backend.map_api import MapAPIService
+from backend.news_miner import KeralaNewsMiner
 
 app = FastAPI(
     title="Kerala Urban Crime Intelligence API",
@@ -237,6 +238,33 @@ def optimize_patrol_route(req: OptimizeRequest):
 def get_provenance_audit():
     """Returns statutory legal compliance declarations and empirical audit findings."""
     return DATA_DISCOVERY_INVESTIGATION
+
+
+@app.get("/api/news/sources")
+def get_news_sources():
+    """Returns registered Kerala news publications with coverage details."""
+    return KeralaNewsMiner.get_sources()
+
+
+@app.get("/api/news/mined-events")
+def get_mined_news_events(city_id: str = Query("kochi")):
+    """Returns verified news crime incidents with geocoded placenames."""
+    events = KeralaNewsMiner.get_mined_events(city_id)
+    return {
+        "city_id": city_id,
+        "count": len(events),
+        "events": events
+    }
+
+
+@app.post("/api/news/mine-and-sync")
+def mine_and_sync_news(city_id: str = Query("kochi")):
+    """
+    Mines Kerala crime news sources, geocodes placenames to beat coordinates,
+    scrubs PII, and updates the active crime dataset and map analytics.
+    """
+    result = KeralaNewsMiner.sync_mined_news_to_dataset(city_id)
+    return result
 
 
 @app.post("/api/data/import")
